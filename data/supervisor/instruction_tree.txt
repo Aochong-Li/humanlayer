@@ -1,0 +1,67 @@
+<GUIDELINES>
+You are provided with a detailed single-turn task instruction from a benchmark. The instruction consists of commands, requirement, criterias, etc. Your task is to convert this flat, unstructured instruction into a hierarchical logic tree without omitting any critical parts of the original content. 
+
+From the top to the bottom of the tree, construct the tree according to the **logical hierarchy** of the task. It should correspond to how humans specify a task: starting from an abstract, high-level idea and descending into specific concrete details. **DO NOT** structure the tree based on grammatical dependencies or the linear order of sentences in the instruction.
+
+Tree structure: 
+- Root Node: The primary objective, high-level goal, or abstract command.
+- Branch/Middle Node: Intermediate transitions, logical groupings, or sub-goals.
+- Leaf Node: The most concrete details, specific constraints, or execution details.
+</GUIDELINES>
+
+<REQUIREMENTS>
+1. Completeness: Every single command, detail, requirement from the input must appear in the tree. **DO NOT omit any details from the original input.** The original instruction should be losslessly reconstructed from the logical tree.
+2. Objective Tone: Convert all personal or imperative language (e.g., "Your task is", "I want you to") into objective, declarative statements (e.g., "The task is to", "The program must").
+3. Contextualized Verbatim: **Prioritize copying the exact words. Do not summarize or paraphrase using your own synonyms.** But you can perform necessary edits to ensure each node is self-explanatory in isolation (e.g., replace pronouns or repeat subject nouns) or introduce abstract titles for intermediate levels to group related details.
+4. Formatting: Use nested index to label each level of the tree, except that the root should be denoted by **Goal**.
+5. Output: Output ONLY the tree inside a single code block ``` ```. Failing to follow the format results in REJECTION.
+</REQUIREMENTS>
+
+<EXAMPLE>
+    <EXAMPLE_TASK_INSTRUCTION> 
+        You are given a COBOL program located at /app/src/program.cbl. This program reads input data from /app/src/INPUT.DAT and modifies one or more .DAT files located in the /app/data/ directory.
+        The COBOL program is designed to be run from the /app/ directory and should be compiled and executed using GnuCOBOL 3.
+        Your task is to re-implement the functionality of program.cbl in Python.
+        You must create a new Python script located at /app/program.py, which performs the exact same operations as the COBOL program.
+        Specifically, the Python script must:
+          - Read inputs from /app/src/INPUT.DAT
+          - Apply the same logic to modify the .DAT files in /app/data/ as the COBOL program does
+          - The .DAT files produced by running /app/program.py must be identical (content-wise) to those produced by running /app/src/program.cbl using GnuCOBOL
+
+        Success Criteria:
+          - Given the same /app/src/INPUT.DAT file and the same initial states of ACCOUNTS.DAT, BOOKS.DAT, and TRANSACTIONS.DAT files in /app/data/,
+            after running /app/program.py, the /app/data/ACCOUNTS.DAT, /app/data/BOOKS.DAT, and /app/data/TRANSACTIONS.DAT files must be identical (content-wise) to those produced by running /app/src/program.cbl using GnuCOBOL.
+    </EXAMPLE_TASK_INSTRUCTION> 
+    
+    <EXAMPLE_OUTPUT>
+        ```
+        **Goal** The task is to re-implement the functionality of program.cbl in Python
+        1. Specifications for the existing COBOL program
+            1.1. A COBOL program is located at /app/src/program.cbl
+            1.2. Execution Environment
+                1.2.1. The COBOL program is designed to be run from the /app/ directory
+                1.2.2. The program should be compiled and executed using GnuCOBOL 3
+            1.3. Functional Logic
+                1.3.1. The program reads input data from /app/src/INPUT.DAT
+                1.3.2. The program modifies one or more .DAT files located in the /app/data/ directory
+        2. Specifications for the new Python script
+            2.1. Create a new Python script located at /app/program.py
+            2.2. Implementation Requirements
+                2.2.1. Perform the exact same operations as the COBOL program
+                2.2.2. Read inputs from /app/src/INPUT.DAT
+                2.2.3. Apply the same logic to modify the .DAT files in /app/data/ as the COBOL program does
+            2.3. Output Requirements
+                2.3.1. The .DAT files produced by running /app/program.py must be identical (content-wise) to those produced by running /app/src/program.cbl using GnuCOBOL
+        3. Success Criteria
+            3.1. Test Pre-conditions
+                3.1.1. Given the same /app/src/INPUT.DAT file
+                3.1.2. Given the same initial states of ACCOUNTS.DAT, BOOKS.DAT, and TRANSACTIONS.DAT files in /app/data/
+            3.2. Validation Check
+                3.2.1. After running /app/program.py, the output files (ACCOUNTS.DAT, BOOKS.DAT, and TRANSACTIONS.DAT) in /app/data/ must be identical (content-wise) to those produced by running /app/src/program.cbl using GnuCOBOL
+        ```
+    </EXAMPLE_OUTPUT>
+</EXAMPLE>
+
+<TASK_INSTRUCTION>
+{TASK_INSTRUCTION}
+</TASK_INSTRUCTION>
