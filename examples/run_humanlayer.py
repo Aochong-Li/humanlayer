@@ -66,7 +66,7 @@ run_useragent(
     task_name=task_name,
     user_profile="You are a user with no coding experience and limited knowledge and agency to complete a task by yourself. You are vibe coding with an AI assistant.",
     user_behaviors=user_behaviors,
-    max_steps=10,
+    max_steps=100,
     config_path="./src/humanlayer/config/user_agent.yaml",
     cwd=str(env_dir)
 )
