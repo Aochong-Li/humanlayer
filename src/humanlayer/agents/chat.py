@@ -1,5 +1,3 @@
-"""Simple chat agent that just queries the model without executing actions."""
-
 from jinja2 import StrictUndefined, Template
 from pydantic import BaseModel
 
@@ -12,22 +10,31 @@ class ChatAgentConfig(BaseModel):
 
 
 class ChatAgent:
-    """A simple chatbot agent that only talks, doesn't execute commands."""
-
-    def __init__(self, model: Model, env: Environment, *, config_class: type = ChatAgentConfig, **kwargs):
-        self.config = config_class(**kwargs)
+    def __init__(self, model: Model, env: Environment, config: ChatAgentConfig):
         self.model = model
         self.env = env
-        self.extra_template_vars = {}
+        self.config = config
 
-    def render_template(self, template: str, **kwargs) -> str:
-        template_vars = self.config.model_dump() | self.env.get_template_vars() | self.model.get_template_vars()
-        return Template(template, undefined=StrictUndefined).render(
-            **kwargs, **template_vars, **self.extra_template_vars
-        )
+    def query(self, messages: list[dict]) -> str:
+        full_messages = self._build_prompt(messages)
+        response = self.model.query(full_messages)
+        return response["content"]
 
-    def query(self, messages: list[dict]) -> dict:
-        """Query the model and return response."""
-        response = self.model.query(messages)
-        
-        return response
+    def _build_prompt(self, messages: list[dict]) -> list[dict]:
+        prompt = []
+        system = self._render(self.config.system_template)
+        if system:
+            prompt.append({"role": "system", "content": system})
+        if self.config.instance_template:
+            prompt.append({"role": "user", "content": self._render(self.config.instance_template)})
+        prompt.extend(messages)
+        return prompt
+
+    def _render(self, template: str, **extra) -> str:
+        vars = {
+            **self.config.model_dump(),
+            **self.env.get_template_vars(),
+            **self.model.get_template_vars(),
+            **extra,
+        }
+        return Template(template, undefined=StrictUndefined).render(**vars)

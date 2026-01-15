@@ -9,6 +9,7 @@ _ENVIRONMENT_MAPPING = {
     "docker": "humanlayer.environments.docker.DockerEnvironment",
     "singularity": "humanlayer.environments.singularity.SingularityEnvironment",
     "local": "humanlayer.environments.local.LocalEnvironment",
+    "e2b": "humanlayer.environments.e2b.E2BEnvironment",
     "swerex_docker": "humanlayer.environments.extra.swerex_docker.SwerexDockerEnvironment",
     "bubblewrap": "humanlayer.environments.extra.bubblewrap.BubblewrapEnvironment",
 }

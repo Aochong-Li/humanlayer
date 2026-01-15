@@ -1,60 +1,62 @@
-from pydantic import BaseModel
-from dataclasses import dataclass
-from jinja2 import StrictUndefined, Template
+from dataclasses import dataclass, field
 
 @dataclass
 class Message:
-    role: str # role of the creator of the message (user, agent, environment)
-    isvisibleto: list[str] # permission to see the message
-    reasoning: str = "" # user internal reasoning trace
-    action: str = "" # action is user's bash command
-    response: str = "" # response can be 1. request to agent 2. response from agent to user 3. observation from user's execution
+    role: str  # creator: "user", "agent", "environment"
+    visible_to: list[str] = field(default_factory=list)
+    reasoning: str = ""
+    action: str = ""
+    response: str = ""
 
-class SessionHistory:
-    """
-    Assumptions:
-    - User's reasoning trace should never be visible to agent
-    - The environment's response should never be visible to agent
-    """
+
+class ChatHistory:
     def __init__(self):
-        self.history = []
+        self.messages: list[Message] = []
 
     def append(self, message: Message):
-        self.history.append(message)
+        self.messages.append(message)
 
-    def render_template(self, by_role: str, to_role: str, **kwargs) -> str:
-        if by_role == 'user' and to_role=='agent':
-            return kwargs.get('response', '')
-        elif by_role == 'user' and to_role == 'user':
-            reasoning = kwargs.get('reasoning', '')
-            action = kwargs.get('action', '')
-            response = kwargs.get('response', '')
-            if action:
-                return f"<think>{reasoning}</think>\n<response>```bash\n{action}\n```</response>"
-            elif response:
-                return f"<think>{reasoning}</think>\n<response>```request\n{response}\n```</response>"
-            else:
-                return f"<think>{reasoning}</think>\n<response></response>"
-            
-        elif by_role=='observation' and to_role == 'user':
-            return kwargs.get('response', '')
-        elif by_role=="agent" and to_role=="user":
-            agent_response = kwargs.get('response', '')
-            return f"This is the AI agent's response to your last request: {agent_response}"
-        else:
-            raise ValueError(f"Invalid roles: {by_role} and {to_role}")
-
-    def get(self, role: str) -> list[dict]:
+    def get(self, viewer: str) -> list[dict]:
+        """Return message history formatted for the given viewer."""
         result = []
-        for message in self.history:
-            if role in message.isvisibleto:
-                content = self.render_template(
-                    message.role, role,
-                    reasoning=message.reasoning,
-                    action=message.action,
-                    response=message.response
-                    )
-                llm_role = "assistant" if message.role == role else "user"
-                result.append({"role": llm_role, "content": content})
-                
+        for msg in self.messages:
+            if viewer not in msg.visible_to:
+                continue
+            
+            content = self._format_message(msg, viewer)
+            llm_role = "assistant" if msg.role == viewer else "user"
+            result.append({"role": llm_role, "content": content})
+        
         return result
+
+    def _format_message(self, msg: Message, viewer: str) -> str:
+        """Format a message's content based on who's viewing it."""
+
+        # Agent viewing user's message - just show the request
+        if msg.role == "user" and viewer == "agent":
+            return msg.response
+
+        # User viewing their own message - show full trace with <think><response> tags
+        if msg.role == "user" and viewer == "user":
+            if msg.action:
+                body = f"```bash\n{msg.action}\n```"
+            elif "[USER END]" in msg.response:
+                body = msg.response
+            else:
+                body = f"```request\n{msg.response}\n```"
+
+            return f"<think>{msg.reasoning}</think>\n<response>{body}</response>"
+
+        # User viewing environment output
+        if msg.role == "environment" and viewer == "user":
+            return msg.response
+
+        # User viewing agent's response
+        if msg.role == "agent" and viewer == "user":
+            return f"AI agent's response: {msg.response}"
+
+        # Agent viewing agent's own message
+        if msg.role == "agent" and viewer == "agent":
+            return msg.response
+
+        raise ValueError(f"No format rule for {msg.role} -> {viewer}")

@@ -11,7 +11,6 @@ class LocalEnvironmentConfig(BaseModel):
     env: dict[str, str] = {}
     timeout: int = 30
 
-
 class LocalEnvironment:
     def __init__(self, *, config_class: type = LocalEnvironmentConfig, **kwargs):
         """This class executes bash commands directly on the local machine."""
