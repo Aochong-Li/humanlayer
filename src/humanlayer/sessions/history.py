@@ -57,6 +57,20 @@ class ChatHistory:
 
         # Agent viewing agent's own message
         if msg.role == "agent" and viewer == "agent":
+            # Format agent's own message with think/action tags for context
+            if msg.action:
+                body = f"```bash\n{msg.action}\n```"
+            elif "[TASK COMPLETE]" in (msg.response or ""):
+                body = msg.response
+            else:
+                body = msg.response or ""
+
+            if msg.reasoning:
+                return f"<think>{msg.reasoning}</think>\n<action>{body}</action>"
+            return body
+
+        # Agent viewing environment output (for agent-only mode)
+        if msg.role == "environment" and viewer == "agent":
             return msg.response
 
         raise ValueError(f"No format rule for {msg.role} -> {viewer}")
