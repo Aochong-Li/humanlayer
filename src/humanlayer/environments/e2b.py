@@ -12,6 +12,7 @@ from typing import Any
 from dirhash import dirhash
 from dockerfile_parse import DockerfileParser
 from e2b import AsyncSandbox, AsyncTemplate, Template
+from e2b.sandbox.commands.command_handle import CommandExitException
 from e2b.sandbox.filesystem.filesystem import WriteEntry
 from pydantic import BaseModel
 from tenacity import retry, stop_after_attempt, wait_exponential
@@ -25,7 +26,7 @@ class E2BEnvironmentConfig(BaseModel):
     allow_internet: bool = True
     session_id: str = "default"
     docker_image: str | None = None
-    jobs_dir: str = "examples/jobs"
+    jobs_dir: str = "./examples/jobs"
 
 
 class E2BEnvironment:
@@ -69,13 +70,7 @@ class E2BEnvironment:
         if self.config.docker_image:
             template = Template().from_image(image=self.config.docker_image)
         else:
-            # E2B resolves COPY paths relative to cwd, so must be in environment dir
-            old_cwd = os.getcwd()
-            try:
-                os.chdir(self.config.environment_dir)
-                template = Template().from_dockerfile(dockerfile_content_or_path="Dockerfile")
-            finally:
-                os.chdir(old_cwd)
+            raise Exception("Docker image is not found. Please set docker_image in the config or Dockerfile in the environment directory.")
 
         await AsyncTemplate.build(template=template, alias=self._template_name, cpu_count=4, memory_mb=4096)
 
@@ -136,15 +131,23 @@ class E2BEnvironment:
             timeout=timeout or 0,
             user="root",
         )
-        result = await handle.wait()
 
-        output = result.stdout
-        if result.stderr:
-            if output:
-                output += "\n"
-            output += result.stderr
-
-        return {"output": output, "returncode": result.exit_code}
+        try:
+            result = await handle.wait()
+            output = result.stdout
+            if result.stderr:
+                if output:
+                    output += "\n"
+                output += result.stderr
+            return {"output": output, "returncode": result.exit_code}
+        except CommandExitException as e:
+            # Command failed - return stdout/stderr instead of raising
+            output = e.stdout or ""
+            if e.stderr:
+                if output:
+                    output += "\n"
+                output += e.stderr
+            return {"output": output, "returncode": e.exit_code}
 
     @retry(stop=stop_after_attempt(2), wait=wait_exponential(multiplier=1, min=1, max=10), reraise=True)
     async def upload_file(self, source_path: Path | str, target_path: str):
@@ -191,6 +194,37 @@ class E2BEnvironment:
             raise RuntimeError("Sandbox not started. Call start() first.")
         content = await self._sandbox.files.read(source_path, format="bytes")
         Path(target_path).write_bytes(content)
+
+    async def download_dir(self, source_dir: str | None = None, target_dir: Path | str = None):
+        """Download a directory from the sandbox.
+
+        Args:
+            source_dir: Path in the sandbox (defaults to working directory).
+            target_dir: Local directory to save files.
+        """
+        if not self._sandbox:
+            raise RuntimeError("Sandbox not started. Call start() first.")
+
+        source_dir = source_dir or self._work_dir
+        target_dir = Path(target_dir)
+        target_dir.mkdir(parents=True, exist_ok=True)
+
+        # List all files recursively
+        result = await self.execute(f"find {source_dir} -type f")
+        files = [f.strip() for f in result.get("output", "").split("\n") if f.strip()]
+
+        for file_path in files:
+            rel_path = Path(file_path).relative_to(source_dir)
+            local_path = target_dir / rel_path
+            local_path.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                await self.download_file(file_path, local_path)
+            except Exception as e:
+                print(f"Failed to download {file_path}: {e}")
+
+    def get_work_dir(self) -> str:
+        """Get the working directory path."""
+        return self._work_dir
 
     def get_template_vars(self) -> dict[str, Any]:
         """Get template variables for prompt rendering."""

@@ -1,20 +1,24 @@
 """
-Test user-agent workflow with COBOL modernization task.
+HumanLayer orchestrated workflow.
 
 Run: python examples/run_humanlayer.py
 """
 
 import os
+import yaml
 from pathlib import Path
 import shutil
-from humanlayer.sessions.useragent import main as run_useragent
-os.chdir("/home/al2644/research/codebase/agent/humanlayer")
+from humanlayer.sessions.orchestrated import main as run_orchestrated
+
+# Setup paths
+BASE_DIR = Path(__file__).parent.parent
+os.chdir(BASE_DIR)
 
 task_dir = Path("examples/tasks")
-task_name = "cobol-modernization"
+task_name = "portfolio-optimization"
 
-# Copy task directory to examples/tasks
-src = Path("../terminal-bench-2") / task_name
+# Copy task from terminal-bench-2
+src = BASE_DIR.parent / "terminal-bench-2" / task_name
 dst = task_dir / task_name
 
 if dst.exists():
@@ -22,51 +26,25 @@ if dst.exists():
 
 shutil.copytree(str(src), str(dst))
 
+# Set environment directory
 env_dir = task_dir / task_name / "environment"
 if env_dir.exists():
     os.environ["HUMANLAYER_CWD"] = str(env_dir)
 
-user_behaviors = """These are behaviors the user has shown in the past - not rules to follow rigidly. Use them as background context. Your actual thinking and actions should depend on the situation.
+# Load user profile
+profiles_path = BASE_DIR / "src/humanlayer/config/user_profiles.yaml"
+with open(profiles_path) as f:
+    profiles = yaml.safe_load(f)
+user_profile = profiles.get("vibe_coder", profiles["default"])
 
-## What You Are Not Capacable of
-
-- Writing or understanding code beyond trivial edits
-- Debugging error messages (you see red text and some unfamiliar words)
-- Knowing which files matter without being told
-
-## Behavioral Tendencies
-
-**Lazy and sometimes impatient**
-- Sometimes skim, don't read carefully
-- When the AI gives multiple options, pick the first one or whatever looks fancier
-
-**Vague and incomplete (not on purpose):**
-- Don't perfectly describe what you see like an assistant. Think how humans would behave
-- Paraphrase badly, or copy-paste too much or too little
-- Sometimes ask underspecified questions: "it says error??" not "I received an error message stating..."
-
-**Prone to mistakes:**
-- Occasional typos in commands
-- Misremember what the AI said
-- Run commands in the wrong directory
-- Skip steps
-- Assume things work without checking
-
-**Not analytical:**
-- "idk what this means" not "I observe that the output contains..."
-- Sometimes just "lets try this" with no real reasoning
-
-**Inconsistent:**
-- Sometimes patient, sometimes rushing
-- Sometimes follow instructions exactly, sometimes paraphrase wrong
-- Occasionally ignore advice and try something yourself (badly)"""
-
-run_useragent(
+# Run orchestrated session
+run_orchestrated(
     task_dir=task_dir,
+    task_src_dir=src,
     task_name=task_name,
-    user_profile="You are a user with no coding experience and limited knowledge and agency to complete a task by yourself. You are vibe coding with an AI assistant.",
-    user_behaviors=user_behaviors,
+    user_profile=user_profile,
     max_steps=100,
-    config_path="./src/humanlayer/config/user_agent.yaml",
-    cwd=str(env_dir)
+    config_path="./src/humanlayer/config/orchestrated.yaml",
+    cwd=str(env_dir),
+    orchestrator_mode="simple"
 )

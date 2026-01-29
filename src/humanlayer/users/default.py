@@ -1,7 +1,6 @@
 import re
 import subprocess
-from dataclasses import dataclass, field
-from typing import Callable
+from dataclasses import dataclass
 
 from jinja2 import StrictUndefined, Template
 from pydantic import BaseModel
@@ -26,10 +25,13 @@ class ExecutionTimeout(UserException):
 # ──────────────────────────────────────────────────────────────
 
 class UserConfig(BaseModel):
+    # templates
     system_template: str
-    instance_template: str
+    profile_template: str
+    next_step_template: str
+    
+    # user profile
     user_profile: str
-    user_behaviors: str
 
     # parsing
     think_tags: list[str] = ["<think>", "</think>"]
@@ -99,6 +101,14 @@ class User:
         self.parser = ActionParser(config)
         self.extra_template_vars = kwargs
 
+    def step(self, history: list[dict] = []) -> UserAction:
+        """
+        Generate next action. Working memory should be injected by orchestrator.
+        Returns UserAction with reasoning, type, and content.
+        """
+        content = self.query(history)
+        return self.parse(content)
+
     def query(self, messages: list[dict]) -> str:
         full_messages = self._build_prompt(messages)
         response = self.model.query(full_messages)
@@ -115,12 +125,15 @@ class User:
             output = getattr(e, "output", b"").decode("utf-8", errors="replace")
             raise ExecutionTimeout(f"Timeout executing: {command}\n{output}.")
 
-    def _build_prompt(self, messages: list[dict]) -> list[dict]:    
-        return [
+    def _build_prompt(self, messages: list[dict]) -> list[dict]:
+        prompt = [
             {"role": "system", "content": self._render(self.config.system_template)},
-            {"role": "user", "content": self._render(self.config.instance_template)},
+            {"role": "user", "content": self._render(self.config.profile_template)},
             *messages,
+            {"role": "user", "content": self._render(self.config.next_step_template)},
         ]
+
+        return prompt
 
     def _render(self, template: str, **extra) -> str:
         vars = {
@@ -130,4 +143,5 @@ class User:
             **self.extra_template_vars,
             **extra,
         }
+
         return Template(template, undefined=StrictUndefined).render(**vars)

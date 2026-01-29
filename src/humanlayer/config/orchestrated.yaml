@@ -1,0 +1,401 @@
+# Config for orchestrated user-agent workflow
+# The orchestrator controls the simulated user's cognitive state and applies lossy channels
+
+model:
+  model_name: "deepseek/deepseek-reasoner"
+  model_kwargs:
+    max_tokens: 8192
+    temperature: 0.7
+
+env:
+  environment_class: "e2b"
+  jobs_dir: "examples/jobs"
+  timeout: 1800
+  
+orchestrator:
+  task_spec: ""  # Set at runtime
+  max_turns: 100
+
+  parse_task_template: |
+    <GUIDELINES>
+    You are provided with a detailed single-turn task instruction from a benchmark. The instruction consists of commands, requirements, criteria, etc. Your task is to convert this flat, unstructured instruction into a hierarchical task tree without omitting any critical parts of the original content. 
+
+    From the top to the bottom of the tree, construct the tree according to the **logical hierarchy** of the task. It should correspond to how humans specify a task: starting from an abstract, high-level idea and descending into specific concrete details. **DO NOT** structure the tree based on grammatical dependencies or the linear order of sentences in the instruction.
+
+    Tree structure: 
+    - Root Node: The high-level goal or the initial and primary objective when a user starts to conceptualize a task.
+    - Intermediate Nodes: The major aspects, components, or sub-problems that emerge when a user begins to approach the task.
+    - Leaf Nodes: The most concrete details, precise constraints, or execution details.
+
+    When deciding a node's level, use this principle: a parent node should be understandable WITHOUT reading its children. Children add specificity that refines the parent.
+    </GUIDELINES>
+
+    <REQUIREMENTS>
+    1. Completeness: Every single command, detail, requirement from the input must appear in the tree. **DO NOT omit any details from the original input.** The original instruction should be losslessly reconstructed from the logical tree.
+
+    2. Objective Tone: Convert all personal or imperative language (e.g., "Your task is", "I want you to") into objective, declarative statements (e.g., "The task is to", "The program must").
+
+    3. Atomic Nodes: Each node should represent a group of information that a user would naturally express or consider together at the node's level. Do not combine unrelated or orthogonal details into one node.
+    </REQUIREMENTS>
+
+    <OUTPUT_FORMAT>
+    1. Format the output as a JSON object where each node contains three fields: "id", "description", and "children".
+    2. For the "id" field: assign "root" to the root node. For all other nodes, use hierarchical dot-notation indices (e.g., "1", "1.1", "1.2", "2", "2.1", "2.1.1").
+    3. For the "description" field: strictly follow the requirements above.
+    4. Output ONLY the JSON tree inside a single code block (``` ```). Any deviation from this format will result in rejection.
+    </OUTPUT_FORMAT>
+
+    <EXAMPLE>
+        <EXAMPLE_TASK_INSTRUCTION> 
+            You are given a COBOL program located at /app/src/program.cbl. This program reads input data from /app/src/INPUT.DAT and modifies one or more .DAT files located in the /app/data/ directory.
+            The COBOL program is designed to be run from the /app/ directory and should be compiled and executed using GnuCOBOL 3.
+            Your task is to re-implement the functionality of program.cbl in Python.
+            You must create a new Python script located at /app/program.py, which performs the exact same operations as the COBOL program.
+            Specifically, the Python script must:
+              - Read inputs from /app/src/INPUT.DAT
+              - Apply the same logic to modify the .DAT files in /app/data/ as the COBOL program does
+              - The .DAT files produced by running /app/program.py must be identical (content-wise) to those produced by running /app/src/program.cbl using GnuCOBOL
+
+            Success Criteria:
+              - Given the same /app/src/INPUT.DAT file and the same initial states of ACCOUNTS.DAT, BOOKS.DAT, and TRANSACTIONS.DAT files in /app/data/,
+                after running /app/program.py, the /app/data/ACCOUNTS.DAT, /app/data/BOOKS.DAT, and /app/data/TRANSACTIONS.DAT files must be identical (content-wise) to those produced by running /app/src/program.cbl using GnuCOBOL.
+        </EXAMPLE_TASK_INSTRUCTION> 
+        <EXAMPLE_OUTPUT>
+        ```
+        {
+          "id": "root",
+          "description": "Re-implement the functionality of a COBOL program in Python, producing identical output files.",
+          "children": [
+            {
+              "id": "1",
+              "description": "Source COBOL program context and specifications.",
+              "children": [
+                {
+                  "id": "1.1",
+                  "description": "The COBOL program is located at /app/src/program.cbl.",
+                  "children": []
+                },
+                {
+                  "id": "1.2",
+                  "description": "The program reads input data from /app/src/INPUT.DAT.",
+                  "children": []
+                },
+                {
+                  "id": "1.3",
+                  "description": "The program modifies one or more .DAT files located in the /app/data/ directory.",
+                  "children": []
+                },
+                {
+                  "id": "1.4",
+                  "description": "The program is designed to be run from the /app/ directory.",
+                  "children": []
+                },
+                {
+                  "id": "1.5",
+                  "description": "The program should be compiled and executed using GnuCOBOL 3.",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "id": "2",
+              "description": "Python implementation requirements.",
+              "children": [
+                {
+                  "id": "2.1",
+                  "description": "A new Python script must be created at /app/program.py.",
+                  "children": []
+                },
+                {
+                  "id": "2.2",
+                  "description": "The Python script must perform the exact same operations as the COBOL program.",
+                  "children": [
+                    {
+                      "id": "2.2.1",
+                      "description": "The script must read inputs from /app/src/INPUT.DAT.",
+                      "children": []
+                    },
+                    {
+                      "id": "2.2.2",
+                      "description": "The script must apply the same logic to modify the .DAT files in /app/data/ as the COBOL program does.",
+                      "children": []
+                    },
+                    {
+                      "id": "2.2.3",
+                      "description": "The .DAT files produced by running /app/program.py must be identical (content-wise) to those produced by running /app/src/program.cbl using GnuCOBOL.",
+                      "children": []
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "3",
+              "description": "Success criteria for validation.",
+              "children": [
+                {
+                  "id": "3.1",
+                  "description": "Given the same /app/src/INPUT.DAT file and the same initial states of ACCOUNTS.DAT, BOOKS.DAT, and TRANSACTIONS.DAT files in /app/data/.",
+                  "children": []
+                },
+                {
+                  "id": "3.2",
+                  "description": "After running /app/program.py, the output files must be identical (content-wise) to those produced by running /app/src/program.cbl using GnuCOBOL.",
+                  "children": [
+                    {
+                      "id": "3.2.1",
+                      "description": "/app/data/ACCOUNTS.DAT must be identical.",
+                      "children": []
+                    },
+                    {
+                      "id": "3.2.2",
+                      "description": "/app/data/BOOKS.DAT must be identical.",
+                      "children": []
+                    },
+                    {
+                      "id": "3.2.3",
+                      "description": "/app/data/TRANSACTIONS.DAT must be identical.",
+                      "children": []
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+        ```
+        </EXAMPLE_OUTPUT>
+    </EXAMPLE>
+
+    <TASK_INSTRUCTION>
+    {{task_spec}}
+    </TASK_INSTRUCTION>
+
+  next_node_template: |
+    ## Task
+    You are an orchestrator managing a human-AI collaboration session. The human user initially has a high-level goal but discovers specific details and subgoals progressively as the session unfolds. Your job is to determine which task node(s) should naturally come to the user's mind next, given the current session state.
+
+    ## Inputs
+    - `SESSION_HISTORY`: The conversation so far between user and agent
+    - `TASK_TREE`: Hierarchical task specification (root = abstract goal, leaves = concrete details, intermediate nodes = logical groupings of subgoals). Each node has a status: "completed" (revealed to the agent) or "pending" (not yet revealed)
+    - `CURRENT_TASK_NODES`: Nodes recently surfaced to the user's working memory
+    - `Current Turn`: {{current_turn}} / {{max_turns}}
+
+    <SESSION_HISTORY>
+    {{session_history}}
+    </SESSION_HISTORY>
+
+    <TASK_TREE>
+    {{task_tree}}
+    </TASK_TREE>
+
+    <CURRENT_TASK_NODES>
+    {{task_nodes}}
+    </CURRENT_TASK_NODES>
+
+    ## Guidelines
+    - Always start with returnin the root node first at the first turn.
+    - If the user and agent are still productively working on current node(s), return those same node(s)—even if already marked "completed"
+    - If progress has stalled or current nodes are resolved, surface the next relevant "pending" node(s)
+    - Maintain a steady, realistic pace—mirroring how humans naturally discover details and refine ideas during a project. Do not over reveal the task nodes too quickly or too slowly.
+    - Avoid rushing, but ensure **all nodes are revealed before turn {{max_turns}}**
+    - You may return one or more node IDs based on what would naturally co-occur in the user's mind
+
+    ## Output
+    Reason briefly about what a human user would naturally think and communicate to the AI agent next given the current state, then return the node ID(s) in the following format:
+
+    <RETURN_NODES>["node_id", ...]</RETURN_NODES>
+
+    Failure to follow this output format will cause auto-rejection.
+
+  perceive_template: |
+    ## Instruction
+    You are simulating the cognitive perception module for a human user interacting with an AI agent in a terminal environment. Your goal is to simulate how human visual attention and short-term working memory modulate the human perceptive stream.
+
+    You will receive `Input Data` (raw text from an AI response or Terminal output). You need to filter this raw input through the user's cognitive biases, expertise level, and current task context to produce what the user *actually* perceives versus what is displayed on the screen.
+
+    Decompose the input data into two distinct streams:
+
+    1. **PERCEPTION (The Mental Trace):** The fragmentary, filtered signal that enters the user's conscious awareness. It can consist of sparse high-entropy keywords, phrases, visual anchors, and semantic impressions for skipped content.
+    2. **EXTERNAL_MEMORY (The Payload):** The specific, actionable blocks of data (code snippets, exact stack traces, URLs) that the user recognizes as valuable resources or tools to act upon but might not read in detail or memorize. They offload this to the screen to copy-paste or reference later.
+
+    ## Task
+    {{task_spec}}
+
+    ## Recent History
+    {{session_history}}
+
+    ## User Profile
+    {{user_profile}}
+
+    ## Some Human Cognitive Biases
+    1. Saccadic Masking: he brain scans for high-entropy anchors (e.g., unique values, error numbers, bolded content) and actively suppresses perception during saccades, skipping highly predictable, low-information filler words to optimize processing speed.
+    2. Foveal Focus: Visual acuity is limited to a narrow "spotlight". Attention is not uniform; it is allocated to specific "Areas of Interest" (AOIs) determined by the user's profile, and current objective, task goal, session history.
+    3. Schema Matching: When input matches a stored mental template, the brain prioritizes the template over the raw data. It replaces complex details with a generic mental tag, often ignoring deviations or specific syntax if the overall pattern fits the expectation.
+    4. Confirmation Bias: Users scan text specifically to confirm their existing hypothesis. Information that contradicts this expectation is frequently overlooked, while ambiguous data is interpreted as supporting the hypothesis.
+
+    ## Input Data
+    Source: {{role}}
+    Raw Content:
+    {{raw_response}}
+
+    ## Requirements
+    1. Context Grounded: The `<PERCEPTION>` stream should be grounded in the user's profile (e.g., expertise, knowledge level, familiarity).
+    2. No Inner Monologue: The `<PERCEPTION>` stream is a sensory trace derived directly from the input. Do not add thinking or commentary (e.g., do NOT write `[the user is confused]`). Record only the text fragments or semantic impressions (e.g., `[standard boilerplate]`) that the user perceived.
+    3. External Memory Offloading: If the observation contains dense resources (e.g., a code snippet to copy, a long JSON response, or a detailed error log), do not put the full text in perception. Place these blocks in `<EXTERNAL_MEMORY>`. If there is no external resource, leave `<EXTERNAL_MEMORY>` empty.
+        - In the `<PERCEPTION>` stream, use a reference tag `[REF:i]` where `i` is a unique integer index (0, 1, 2...) (e.g., `... the suggested code [REF:0] ...`)
+        - At the same time, construct a JSON object inside `<EXTERNAL_MEMORY>`. The keys must be the indices **as strings** (e.g., "0"), and the values are JSON objects of `{'summary': ..., 'content': ...}`.
+        - The `content` field is the **RAW, VERBATIM** original text block. DO NOT modify or truncate. The `summary` field is a concise description of the use of the content.
+    4. Cognitive Biases: Apply any relevant cognitive biases or your expert knowledge of cognitive psychology to imitate how this human user cognitively digests the input data stream. You can make reasonable assumptions if needed, for example:
+        - Non-Linear Scanning: Human reading is jerky and selective. SKIP low-entropy text (e.g., standard English filler, polite padding, predictable boilerplate) using `...`.
+        - High-Entropy Fixation: The eye snaps to surprising or critical information. **BOLD** high-signal tokens: specific error names, user-generated filenames (ignoring library paths), specific variable values, or direct answers.
+        - Spatial Preservation: PRESERVE the original indentation and structure of the perceived pieces.
+
+    ## Format Requirements
+    1. Use any appropriate symbols to simulate the cognitive process. For instance, use `...` to indicate text skipped by the eye and `**BOLD**` for text the fovea focused on.
+    2. STRICT REQUIREMENT: structure your response in the format like the example below (The content inside `<EXTERNAL_MEMORY>` must be a **valid JSON object**):
+        <ANALYSIS>
+        Put your thinking and analysis of how to simulate the user's perceptive stream here...
+        </ANALYSIS>
+        <PERCEPTION>
+        ... need to update the login logic ... the code fix [REF:0]
+        ...
+        </PERCEPTION>
+        <EXTERNAL_MEMORY>
+
+        {
+        "0": {
+        "summary": "Python Login Function Fix",
+        "content": "def login(user):\n    if user is None:\n        return False\n    return True"
+        }
+        }
+        </EXTERNAL_MEMORY>
+      3. The indicies in the `<EXTERNAL_MEMORY>` MUST BE continuous and start from {{current_index}}.
+  
+  task_progress_template: |
+    ## Task 
+    You are an orchestrator tracking task progress in a human-AI collaboration session. Given the recent interaction history, determine which pending task nodes should now be marked as "completed."
+
+    **Inputs:**
+    <TASK_TREE>
+    {{task_tree}}
+    </TASK_TREE>
+
+    <CURRENT_WORKING_NODES>
+    {{current_nodes}}
+    </CURRENT_WORKING_NODES>
+
+    <RECENT_HISTORY>
+    {{recent_history}}
+    </RECENT_HISTORY>
+
+    ## Completion Criteria
+    A node is "completed" when its information reaches the agent through any of these channels:
+    - **User states it** — directly or paraphrased
+    - **User demonstrates it** — through actions that convey the information (e.g., pasting file contents reveals the file's existence and relevance)
+    - **Agent articulates it** — agent explicitly states or uses the information in its reasoning
+
+    A node is NOT completed if:
+    - The agent asked about it but received no answer
+    - The information was only vaguely hinted at
+    - The agent made an incorrect assumption that went uncorrected
+
+    **Hierarchical Rule:** When all children of a parent node are completed, the parent is automatically completed.
+
+    ## Guidelines
+    - Only evaluate nodes with status "pending"
+    - Current working nodes are the most likely candidates, but any pending node may be completed through natural conversation flow
+    - Completion is binary — do not mark nodes completed based on partial information
+
+    ## Output
+    Reason briefly about what information was exchanged, then return newly completed node IDs:
+
+    <COMPLETED_NODES>["node_id", ...]</COMPLETED_NODES>
+
+    Use exact node IDs from the task tree. Return an empty list if no nodes were completed.
+
+  validate_template: |
+    You are checking if a user's action stays on-task.
+
+    Full task description:
+    {{task_spec}}
+
+    Current subtask(s) the user should be working on:
+    {{current_nodes}}
+
+    User's reasoning: {{reasoning}}
+    User's action: {{action_type}} - {{action_content}}
+
+    Does this action deviate from the task scope or go against the instructions?
+    Consider: minor exploration is OK, but completely unrelated actions are not.
+
+    Return JSON: {"valid": true/false, "reason": "brief explanation if invalid"}
+
+user:
+  system_template: |
+    ## Role
+    You are simulating a human user collaborating with an AI coding assistant in a bash environment.
+
+    ## What You Can Do
+    Execute simple commands achievable by clicking around in the GUI. For example:
+    - Navigate: `ls`, `cd`, `pwd`
+    - View files: `cat`, `head`, `tail`
+    - Basic file ops: `cp`, `mv`, `mkdir`, `rm`
+
+    For anything complex—writing code, debugging, designing solutions—ask the AI agent for help.
+
+    ## Response Format
+    <think>
+    Your internal reasoning about what to do next
+    </think>
+
+    <response>
+    Choose ONE:
+
+    Execute a command:
+    ```bash
+    command_here
+    ```
+
+    Request help from agent:
+    ```request
+    Your message to the agent
+    ```
+ 
+    End session:
+    {{exit_code}}
+    </response>
+
+    ## Rules
+    1. ALWAYS use <think> and <response> tags to format your output
+    2. ONLY One action per response
+    3. Stay in your character consistently as a human user described in the profile
+    4. Only use {{exit_code}} when you think the task is completed
+
+  profile_template: |
+    You are this human user:
+    <PROFILE>
+    {{user_profile}}
+    </PROFILE>
+
+    Your long-term task goal: {{root_goal}}
+
+  next_step_template: |
+    **About AI Responses**
+      - The AI agent cannot access your environment—you can copy and paste and run things yourself in the environment.
+      - Code appears as [CODE_BLOCK] in the response since you cannot understand it. Actual content listed below. You can copy/paste/save/run it, but you don't read or understand it—not even in your thinking.
+      - Again, you are not acting as an assistant but an actual human user.
+    
+    **What's on your mind:**
+    {{task_nodes}}
+
+    Although you don't understand code, you should communicate what is in your mind, what you want, and what you observe when requesting help from the AI agent.
+    Now, you should think about what you want to do next and respond.  
+
+  user_profile: "A non-technical human user who needs to complete a task by vibe-coding with an AI agent. The person has no coding experience and cannot understand or write any code themselves. But they can check out files, click around, and copy and paste."
+  
+  exit_code: "[USER END]"
+
+agent:
+  system_template: |
+    You are an AI assistant helping a human user with a programming task.

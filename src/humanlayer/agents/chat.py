@@ -15,7 +15,7 @@ class ChatAgent:
         self.env = env
         self.config = config
 
-    def query(self, messages: list[dict]) -> str:
+    def step(self, messages: list[dict]) -> str:
         full_messages = self._build_prompt(messages)
         response = self.model.query(full_messages)
         return response["content"]

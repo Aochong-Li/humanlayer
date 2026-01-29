@@ -10,13 +10,14 @@ class LocalEnvironmentConfig(BaseModel):
     cwd: str = ""
     env: dict[str, str] = {}
     timeout: int = 30
+    jobs_dir: str = "./examples/jobs"
 
 class LocalEnvironment:
     def __init__(self, *, config_class: type = LocalEnvironmentConfig, **kwargs):
         """This class executes bash commands directly on the local machine."""
         self.config = config_class(**kwargs)
 
-    def execute(self, command: str, cwd: str = "", *, timeout: int | None = None):
+    async def execute(self, command: str, cwd: str = "", *, timeout: int | None = None):
         """Execute a command in the local environment and return the result as a dict."""
         cwd = cwd or self.config.cwd or os.getcwd()
         result = subprocess.run(

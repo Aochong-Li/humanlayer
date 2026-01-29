@@ -1,9 +1,5 @@
 import asyncio
-import json
-import yaml
-import traceback
 import typer
-from datetime import datetime
 from pathlib import Path
 
 from humanlayer import package_dir
@@ -11,52 +7,15 @@ from humanlayer.agents.chat import ChatAgentConfig as AgentConfig, ChatAgent as 
 from humanlayer.environments import get_environment
 from humanlayer.models import get_model
 from humanlayer.users.default import User, UserConfig, FormatError, ExecutionTimeout
-from humanlayer.sessions.history import ChatHistory, Message
+from humanlayer.sessions.history import SessionHistory, Message
+from humanlayer.sessions.utils import load_config, format_error_observation, create_save_dir, save_messages, run_verification
 from humanlayer.environments.utils.task import get_task_config
 
 app = typer.Typer()
 
 
-def load_config(path: str) -> dict:
-    with open(path) as f:
-        return yaml.safe_load(f)
-
-
-def format_error_observation(error_type: str, details: str, hint: str = "") -> str:
-    """Format an error as a structured observation for the user."""
-    parts = [f"[{error_type}]", details]
-    if hint:
-        parts.append(f"Hint: {hint}")
-    return "\n".join(parts)
-
-
-def save_chat_history(chat_history: ChatHistory, save_dir: str):
-    """Save chat history to jobs/{MM}-{DD}-{HH}/chat_history.json"""
-    timestamp = datetime.now().strftime("%m-%d-%H:%M:%S")
-    save_dir = Path(save_dir) / timestamp
-    save_dir.mkdir(parents=True, exist_ok=True)
-
-    # Convert messages to dicts
-    messages_data = [
-        {
-            "role": msg.role,
-            "visible_to": msg.visible_to,
-            "reasoning": msg.reasoning,
-            "action": msg.action,
-            "response": msg.response,
-        }
-        for msg in chat_history.messages
-    ]
-
-    save_path = save_dir / "chat_history.json"
-    with open(save_path, "w") as f:
-        json.dump(messages_data, f, indent=2)
-
-    print(f"Chat history saved to: {save_path}")
-
-
 async def run_session(user: User, agent: Agent, task: str, max_steps: int = 100):
-    chat_history = ChatHistory()
+    chat_history = SessionHistory()
 
     print(f"\n{'='*60}")
     print(f"Task: {task}")
@@ -148,7 +107,6 @@ async def run_session(user: User, agent: Agent, task: str, max_steps: int = 100)
             print(f"\n{'='*60}")
             print(f"Completed in {step} turns")
             print(f"{'='*60}\n")
-            await user.env.stop()
             return chat_history
 
     print(f"[Warning]: Reached max steps ({max_steps})")
@@ -162,7 +120,6 @@ async def run_session(user: User, agent: Agent, task: str, max_steps: int = 100)
         response=observation,
         visible_to=["user"],
     ))
-    await user.env.stop()
     return chat_history
 
 async def _run_main(
@@ -170,12 +127,16 @@ async def _run_main(
     task_name: str,
     config_path: str,
     user_profile: str,
-    user_behaviors: str,
     max_steps: int,
     cwd: str,
+    progress_callback=None,
 ):
     """Async implementation of main logic."""
     config = load_config(config_path)
+
+    async def report_progress(stage):
+        if progress_callback:
+            await progress_callback(task_name, stage)
 
     # Environment
     task_config = get_task_config(task_dir / task_name)
@@ -194,6 +155,7 @@ async def _run_main(
 
     # Start async environment if needed (e.g., E2B)
     if hasattr(env, 'start'):
+        await report_progress("launch_sandbox")
         await env.start()
 
     try:
@@ -210,8 +172,7 @@ async def _run_main(
 
         user_config = UserConfig(**{
             **config.get("user", {}),
-            "user_profile": user_profile,
-            "user_behaviors": user_behaviors,
+            "user_profile": user_profile
             }
         )
         user = User(model, env, user_config, **{
@@ -219,13 +180,18 @@ async def _run_main(
             "max_steps": max_steps,
         })
 
-        # Run session and save history
+        # Run session
+        await report_progress("run_task")
         chat_history = await run_session(user, agent, task, max_steps)
-        save_dir = env.config.jobs_dir + "/" + task_name
-        save_chat_history(chat_history, save_dir)
+
+        # Save history
+        save_dir = create_save_dir(env.config.jobs_dir, task_name, "useragent")
+        save_messages(chat_history.messages, save_dir, "chat_history.json")
+
+        # Run verification for non-local environments
+        await run_verification(env, task_dir, task_name, save_dir, report_progress)
 
     finally:
-        # Stop async environment if needed
         if hasattr(env, 'stop'):
             await env.stop()
 
@@ -236,7 +202,6 @@ def main(
     task_name: str,
     config_path: str = str(package_dir / "config" / "user_agent.yaml"),
     user_profile: str = "A junior developer learning to code",
-    user_behaviors: str = "",
     max_steps: int = 100,
     cwd: str = ""
 ):
@@ -249,7 +214,6 @@ def main(
         task_name=task_name,
         config_path=config_path,
         user_profile=user_profile,
-        user_behaviors=user_behaviors,
         max_steps=max_steps,
         cwd=cwd,
     ))

@@ -5,11 +5,8 @@ Run: python -m humanlayer.sessions.agentonly --task-dir <path> --task-name <name
 """
 
 import asyncio
-import json
 import re
-import yaml
 import typer
-from datetime import datetime
 from pathlib import Path
 from dataclasses import dataclass
 
@@ -19,7 +16,8 @@ from pydantic import BaseModel
 from humanlayer import package_dir
 from humanlayer.environments import get_environment
 from humanlayer.models import get_model
-from humanlayer.sessions.history import ChatHistory, Message
+from humanlayer.sessions.history import SessionHistory, Message
+from humanlayer.sessions.utils import load_config, format_error_observation, create_save_dir, save_messages, run_verification
 from humanlayer.environments.utils.task import get_task_config
 
 app = typer.Typer()
@@ -108,7 +106,7 @@ class AutonomousAgent:
         self.parser = AgentActionParser(config)
         self.extra_template_vars = kwargs
 
-    def query(self, messages: list[dict]) -> str:
+    def step(self, messages: list[dict]) -> str:
         full_messages = self._build_prompt(messages)
         response = self.model.query(full_messages)
         return response["content"]
@@ -153,50 +151,17 @@ class AutonomousAgent:
 # Session
 # ──────────────────────────────────────────────────────────────
 
-def format_error_observation(error_type: str, details: str, hint: str = "") -> str:
-    """Format an error as a structured observation."""
-    parts = [f"[{error_type}]", details]
-    if hint:
-        parts.append(f"Hint: {hint}")
-    return "\n".join(parts)
-
-
-def save_chat_history(chat_history: ChatHistory, save_dir: str):
-    """Save chat history to jobs/{MM}-{DD}-{HH}/chat_history.json"""
-    timestamp = datetime.now().strftime("%m-%d-%H:%M:%S")
-    save_dir = Path(save_dir) / timestamp
-    save_dir.mkdir(parents=True, exist_ok=True)
-
-    messages_data = [
-        {
-            "role": msg.role,
-            "visible_to": msg.visible_to,
-            "reasoning": msg.reasoning,
-            "action": msg.action,
-            "response": msg.response,
-        }
-        for msg in chat_history.messages
-    ]
-
-    save_path = save_dir / "chat_history.json"
-    with open(save_path, "w") as f:
-        json.dump(messages_data, f, indent=2)
-
-    print(f"Chat history saved to: {save_path}")
-
-
-async def run_agent_session(agent: AutonomousAgent, task: str, max_steps: int = 100):
+async def run_agent_session(agent: AutonomousAgent, task: str, max_steps: int = 100, save_dir: Path = None):
     """Run an agent-only session where the agent solves the task autonomously."""
-    chat_history = ChatHistory()
-
+    chat_history = SessionHistory()
     print(f"\n{'='*60}")
     print(f"Task: {task}")
     print(f"{'='*60}\n")
 
     for step in range(1, max_steps + 1):
-        # Agent decides what to do
+        import pdb; pdb.set_trace()
         try:
-            content = agent.query(chat_history.get("agent"))
+            content = agent.step(chat_history.get("agent"))
             action = agent.parse(content)
         except AgentFormatError as e:
             print(f"\n[Turn: {step}/{max_steps}] [Format error]: {e}")
@@ -241,7 +206,7 @@ async def run_agent_session(agent: AutonomousAgent, task: str, max_steps: int = 
                 visible_to=["agent"],
             ))
 
-        elif action.type == "exit":
+        if action.type == "exit":
             print(f"[Turn: {step}/{max_steps}] [Done]: {action.content}")
             chat_history.append(Message(
                 role="agent",
@@ -253,6 +218,8 @@ async def run_agent_session(agent: AutonomousAgent, task: str, max_steps: int = 
             print(f"Completed in {step} turns")
             print(f"{'='*60}\n")
             return chat_history
+        
+        save_messages(chat_history.messages, save_dir, "chat_history.json")
 
     print(f"[Warning]: Reached max steps ({max_steps})")
     observation = format_error_observation(
@@ -268,20 +235,20 @@ async def run_agent_session(agent: AutonomousAgent, task: str, max_steps: int = 
     return chat_history
 
 
-def load_config(path: str) -> dict:
-    with open(path) as f:
-        return yaml.safe_load(f)
-
-
 async def _run_main(
     task_dir: Path,
     task_name: str,
     config_path: str,
     max_steps: int,
     cwd: str,
+    progress_callback=None,
 ):
     """Async implementation of main logic."""
     config = load_config(config_path)
+
+    async def report_progress(stage):
+        if progress_callback:
+            await progress_callback(task_name, stage)
 
     # Environment
     task_config = get_task_config(task_dir / task_name)
@@ -300,9 +267,11 @@ async def _run_main(
 
     # Start async environment if needed
     if hasattr(env, 'start'):
+        await report_progress("launching sandbox")
         await env.start()
 
     try:
+        import pdb; pdb.set_trace()
         # Model
         model_config = config.get("model", {})
         model_name = model_config.pop("model_name", None)
@@ -314,15 +283,21 @@ async def _run_main(
         agent_config = AgentOnlyConfig(**config.get("agent", {}))
         agent = AutonomousAgent(model, env, agent_config, task=task, max_steps=max_steps)
 
-        # Run session and save history
-        chat_history = await run_agent_session(agent, task, max_steps)
-        save_dir = env.config.jobs_dir + "/" + task_name + "-agentonly"
-        save_chat_history(chat_history, save_dir)
+        # Run session
+        save_dir = create_save_dir(env.config.jobs_dir, task_name, "agentonly")
+        
+        await report_progress("running agent")
+        chat_history = await run_agent_session(agent, task, max_steps, save_dir)
+
+        # Save history
+        save_messages(chat_history.messages, save_dir, "chat_history.json")
+
+        # Run verification for non-local environments
+        await run_verification(env, task_dir, task_name, save_dir, report_progress)
 
     finally:
         if hasattr(env, 'stop'):
             await env.stop()
-
 
 @app.command()
 def main(
